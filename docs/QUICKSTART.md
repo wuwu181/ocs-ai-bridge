@@ -4,7 +4,7 @@
 
 ## 1. 下载和准备
 
-1. 安装 [Node.js](https://nodejs.org/)，版本至少 22。安装后在新终端执行 `node --version` 确认版本。
+1. 安装 [Node.js](https://nodejs.org/)，版本至少 22.13（推荐24 LTS）。安装后在新终端执行 `node --version` 确认版本。
 2. 从 [仓库](https://github.com/wuwu181/ocs-ai-bridge) 点击 **Code → Download ZIP**。私有仓库需使用有访问权限的账号登录。
 3. 把整个 ZIP 解压到自己的目录，例如 `D:\Tools\ocs-ai-bridge`。不要在压缩包预览窗口里直接运行脚本。
 
@@ -99,3 +99,5 @@ Key 输入框留空表示保留已有值。需要移除旧 Key 时明确勾选�
 Git 安装可在停止服务后执行 `git pull --ff-only` 更新，再启动。ZIP 安装用新程序覆盖旧程序，保留本机 `.env` 和 `config.json`；更新后重新导出 OCS 配置。修改端口也需要重新导出。
 
 遇到异常先运行 `diagnose.cmd`。更多配置见 [主说明](../README.md)，常见错误见 [故障排查](TROUBLESHOOTING.md)。
+
+V3 的题库、设备导出、本地模型、局域网与公网连接及费用统计见 [V3指南](V3.md)。正常 OCS 请求默认先查本地题库；新增AI答案标为待核对。分享给其他设备时，在后台创建设备并导出它的独立配置。

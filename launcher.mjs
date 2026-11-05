@@ -18,7 +18,7 @@ async function running(port, token, expectedId) {
   try {
     const response = await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(1200) });
     const value = await response.json();
-    if (!response.ok || value.service !== 'ocs-ai-bridge' || !value.ui || value.instance_id !== expectedId) return false;
+    if (!response.ok || value.service !== 'ocs-ai-bridge' || value.version!==VERSION || !value.ui || value.instance_id !== expectedId) return false;
     const check = await fetch(`http://127.0.0.1:${port}/admin/config`, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(1200) });
     return check.ok;
   } catch { return false; }
@@ -32,7 +32,8 @@ async function listen(server, port, host) {
 }
 async function main() {
   const args = process.argv.slice(2);
-  if (Number(process.versions.node.split('.')[0]) < 22) throw new Error('需要 Node.js 22 或更高版本。');
+  const [major,minor]=process.versions.node.split('.').map(Number);
+  if (major < 22 || major===22 && minor<13) throw new Error('需要 Node.js 22.13 或更新版本（推荐24 LTS）。');
   if (args.includes('--check')) {
     console.log(`Node.js ${process.versions.node}`);
     if (!existsSync(resolve(projectRoot, 'config.json'))) { console.log('尚未初始化。双击 start.cmd 可自动创建本机配置。'); return; }
@@ -59,6 +60,7 @@ async function main() {
     try { await listen(bridge.server, selectedPort, config.server.host); break; }
     catch (error) {
       if (error.code !== 'EADDRINUSE' && error.code !== 'EACCES') throw error;
+      bridge.database.close();
       bridge = null;
       console.log(`端口 ${selectedPort} 已占用或不可使用，尝试下一个端口。`);
     }

@@ -20,7 +20,7 @@ foreach ($relative in $sourceFiles) {
   New-Item -ItemType Directory -Path (Split-Path -Parent $target) -Force | Out-Null
   Copy-Item -LiteralPath $source -Destination $target
 }
-$zipPath = Join-Path (Split-Path -Parent $packageRoot) 'OCS-AI-Bridge-v2.zip'
+$zipPath = Join-Path (Split-Path -Parent $packageRoot) 'OCS-AI-Bridge-v3.zip'
 Compress-Archive -LiteralPath $stageRoot -DestinationPath $zipPath -Force
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $archive = [System.IO.Compression.ZipFile]::OpenRead($zipPath)

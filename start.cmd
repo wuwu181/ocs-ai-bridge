@@ -5,14 +5,14 @@ title OCS AI 多模型控制台
 cd /d "%~dp0"
 where node >nul 2>nul
 if errorlevel 1 (
-  echo 未找到 Node.js。请安装 Node.js 22 或更新版本，再重新双击本文件。
+  echo 未找到 Node.js。请安装 Node.js 22.13 或更新版本，再重新双击本文件。
   echo 下载地址：https://nodejs.org/
   pause
   exit /b 1
 )
-node -e "if(Number(process.versions.node.split('.')[0])<22)process.exit(1)"
+node -e "const v=process.versions.node.split('.').map(Number);if(v[0]<22||(v[0]===22&&v[1]<13))process.exit(1)"
 if errorlevel 1 (
-  echo Node.js 版本过低，请升级到 22 或更新版本。
+  echo Node.js 版本过低，请升级到 22.13 或更新版本。
   pause
   exit /b 1
 )

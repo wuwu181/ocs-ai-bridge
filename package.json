@@ -1,16 +1,16 @@
 {
   "name": "ocs-ai-bridge",
-  "version": "2.0.0",
+  "version": "3.0.0",
   "private": true,
   "type": "module",
   "description": "OCS multimodal question adapter for Chat Completions and Claude Messages",
   "engines": {
-    "node": ">=22"
+    "node": ">=22.13"
   },
   "scripts": {
     "setup": "node setup.mjs",
     "start": "node launcher.mjs",
-    "test": "node --test",
+    "test": "node --test test/bridge.test.mjs test/v2.test.mjs test/v3.test.mjs",
     "generate": "node generate-configs.mjs"
   },
   "repository": {

@@ -3,15 +3,19 @@ import { readFileSync } from 'node:fs';
 import { createHash, timingSafeEqual, randomUUID } from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import { resolve } from 'node:path';
+import { networkInterfaces } from 'node:os';
+import { WorkspaceDB } from './lib/database.mjs';
+import { chinaClock } from './lib/pricing.mjs';
 import { Solver } from './lib/solver.mjs';
 import { BridgeError, redact, listModels } from './lib/providers.mjs';
 import { initializeFiles } from './lib/store.mjs';
 import { bridgeConfig } from './lib/ocs.mjs';
 
-export const VERSION = '2.0.0';
+export const VERSION = '3.0.0';
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],
+  ['/features.js', ['features.js', 'text/javascript; charset=utf-8']],
   ['/app.css', ['app.css', 'text/css; charset=utf-8']]
 ]);
 const answerPaths = new Set(['/api/answer', '/api/answer/lite', '/api/answer/full']);
@@ -42,7 +46,8 @@ async function body(req, maxBytes) {
 
 export function createBridgeServer(initialConfig, { fetchImpl = fetch, log = () => {}, store = null } = {}) {
   let config = initialConfig;
-  let solver = new Solver(config, { fetchImpl, log });
+  const database = new WorkspaceDB(store?.root || null,config.token);
+  let solver = new Solver(config, { fetchImpl, log, database });
   const retired = new Set();
   const history = [];
   const stats = { requests: 0, success: 0, failed: 0, cached: 0, input_tokens: 0, output_tokens: 0, total_tokens: 0, total_ms: 0 };
@@ -68,18 +73,27 @@ export function createBridgeServer(initialConfig, { fetchImpl = fetch, log = () 
       cached: !!value.cached, elapsed_ms: ms, usage, error_code: value.error?.code || '' });
     if (history.length > 200) history.pop();
   }
-  async function execute(input, req, res, requestId, started) {
+    async function execute(input, req, res, requestId, started, device=null) {
+    if(!input || typeof input!=='object' || Array.isArray(input)) throw new BridgeError('invalid_question','请求体必须是 JSON 对象。',400);
+    const socketIP=(req.socket.remoteAddress||'').replace(/^::ffff:/,'');
+    const ip=config.network.trustedProxies.includes(socketIP) && req.headers['x-forwarded-for'] ? String(req.headers['x-forwarded-for']).split(',').at(-1).trim() : socketIP;
+    if(device?.settings.profiles.length) {
+      if(input.profile && !device.settings.profiles.includes(input.profile)) throw new BridgeError('device_profile','此设备无权使用指定模型。',403);
+      if(!input.profile) input.profile=device.settings.profiles.find(id=>config.profiles[id]?.enabled && (!input.images?.length || config.profiles[id].vision)) || device.settings.profiles[0];
+    }
+    const identity=database.admit(device,ip,requestId);
     const cancel = new AbortController();
     const onClose = () => { if (!res.writableEnded) cancel.abort(); };
     res.on('close', onClose);
     let value;
     try { value = await solver.solve(input, { signal: cancel.signal, requestId }); }
     catch (error) {
-      value = { code: 0, success: false, request_id: requestId, usage: error.usage, model_calls: error.model_calls,
+      value = { code: 0, success: false, request_id: requestId, usage: error.usage, cost:error.cost, model_calls: error.model_calls,
         error: { code: error.code || 'request_failed', message: redact(error.message || '请求失败。'), http_status: error.status || 422 }, ...(error.failures ? { attempts: error.failures } : {}) };
       log({ request_id: requestId, status: 'error', code: error.code || 'request_failed', elapsed_ms: Date.now() - started });
     } finally { res.removeListener('close', onClose); }
     record(input, value, started);
+    database.finish(requestId,identity,value);
     json(res, 200, value);
   }
   function sameOrigin(req) {
@@ -114,6 +128,27 @@ export function createBridgeServer(initialConfig, { fetchImpl = fetch, log = () 
         sameOrigin(req);
         if (!authorized(req, config.token)) throw new BridgeError('bridge_auth', '本机访问 token 不匹配，请从 start.cmd 重新打开控制台。', 401);
         if (req.method === 'GET' && url.pathname === '/admin/state') { json(res, 200, { ...health(), stats: { ...stats, average_ms: stats.requests ? stats.total_ms / stats.requests : 0 }, history }); return; }
+        if (req.method==='GET' && url.pathname==='/admin/analytics') { json(res,200,database.analytics(url.searchParams.get('day')||chinaClock().day)); return; }
+        if (req.method==='GET' && url.pathname==='/admin/network') {
+          const addresses=Object.values(networkInterfaces()).flat().filter(x=>x && !x.internal && x.family==='IPv4').map(x=>`http://${x.address}:${config.server.port}`);
+          json(res,200,{host:config.server.host,addresses,publicBase:config.network.publicBase,timezone:'Asia/Shanghai'});return;
+        }
+        if (url.pathname==='/admin/devices') {
+          if(req.method==='GET') {json(res,200,{items:database.devices()});return;}
+          if(req.method==='POST') {const value=await body(req,65536); if(value.settings?.profiles?.some(id=>!config.profiles[id])) throw new BridgeError('device_profile','设备模型不存在。',400); json(res,200,database.saveDevice(value));return;}
+        }
+        const deviceId=url.pathname.match(/^\/admin\/devices\/([a-f0-9-]+)$/)?.[1];
+        if(deviceId && req.method==='PUT') {const value=await body(req,65536);if(value.settings?.profiles?.some(id=>!config.profiles[id])) throw new BridgeError('device_profile','设备模型不存在。',400);json(res,200,database.saveDevice(value,deviceId));return;}
+        if (url.pathname==='/admin/questions') {
+          if(req.method==='GET') {json(res,200,database.listQuestions(url.searchParams.get('q')||'',url.searchParams.get('page'),url.searchParams.get('kind')||''));return;}
+          if(req.method==='POST') {json(res,200,database.saveQuestion(await body(req,config.server.maxBodyBytes)));activeSolvers().forEach(s=>s.cache.clear());return;}
+        }
+        const questionId=url.pathname.match(/^\/admin\/questions\/(\d+)$/)?.[1];
+        if(questionId) {
+          if(req.method==='GET') {json(res,200,database.question(Number(questionId)));return;}
+          if(req.method==='PUT') {json(res,200,database.saveQuestion(await body(req,config.server.maxBodyBytes),Number(questionId)));activeSolvers().forEach(s=>s.cache.clear());return;}
+          if(req.method==='DELETE') {database.removeQuestion(Number(questionId));activeSolvers().forEach(s=>s.cache.clear());json(res,200,{success:true});return;}
+        }
         if (req.method === 'GET' && url.pathname === '/admin/config') {
           if (!store) throw new BridgeError('no_store', '当前运行模式没有配置存储。', 503);
           json(res, 200, store.publicConfig()); return;
@@ -122,7 +157,7 @@ export function createBridgeServer(initialConfig, { fetchImpl = fetch, log = () 
           if (!store) throw new BridgeError('no_store', '当前运行模式没有配置存储。', 503);
           const value = await body(req, 1024 ** 2);
           const result = store.save(value);
-          retired.add(solver); config = store.config; solver = new Solver(config, { fetchImpl, log });
+          retired.add(solver); config = store.config; solver = new Solver(config, { fetchImpl, log, database });
           store.exportFiles(`http://${req.headers.host}`);
           json(res, 200, result); return;
         }
@@ -132,7 +167,10 @@ export function createBridgeServer(initialConfig, { fetchImpl = fetch, log = () 
           if (!['auto', 'lite', 'full'].includes(mode) || profile && !Object.hasOwn(config.profiles, profile)) throw new BridgeError('bad_export', '导出模式或接口标识无效。', 400);
           const base = new URL(url.searchParams.get('base') || `http://${req.headers.host}`);
           if (!['http:', 'https:'].includes(base.protocol) || base.username || base.password || base.search || base.hash || !['', '/'].includes(base.pathname)) throw new BridgeError('bad_export', '请填写不带路径的 HTTP(S) 服务根地址。', 400);
-          json(res, 200, bridgeConfig(config.token, base.origin, profile, mode)); return;
+          const id=url.searchParams.get('device');
+          if(!id && !['localhost','127.0.0.1','[::1]'].includes(base.hostname)) throw new BridgeError('device_required','给其他设备导出时，请先选择独立设备令牌。',400);
+          if(id) {const item=database.devices().find(x=>x.id===id);if(!item?.settings.enabled) throw new BridgeError('device_denied','设备不存在或已停用。',403);if(profile && item.settings.profiles.length && !item.settings.profiles.includes(profile)) throw new BridgeError('device_profile','设备没有该模型权限。',403);}
+          json(res, 200, bridgeConfig(id?database.deviceToken(id):config.token, base.origin, profile, mode)); return;
         }
         if (req.method === 'GET' && url.pathname === '/admin/models') {
           const profile = config.profiles[url.searchParams.get('profile')];
@@ -141,22 +179,24 @@ export function createBridgeServer(initialConfig, { fetchImpl = fetch, log = () 
           json(res, 200, { models }); return;
         }
         if (req.method === 'POST' && url.pathname === '/admin/cache/clear') { activeSolvers().forEach(item => item.cache.clear()); json(res, 200, { success: true }); return; }
-        if (req.method === 'POST' && url.pathname === '/admin/test') { const input = await body(req, config.server.maxBodyBytes); await execute(input, req, res, requestId, started); return; }
+        if (req.method === 'POST' && url.pathname === '/admin/test') { const input = await body(req, config.server.maxBodyBytes); await execute({...input,use_database:input.use_database===true}, req, res, requestId, started); return; }
         throw new BridgeError('not_found', '管理接口不存在或请求方式不正确。', 404);
       }
       if (!answerPaths.has(url.pathname)) throw new BridgeError('not_found', '接口不存在。', 404);
       if (req.method !== 'POST') { res.setHeader('Allow', 'POST, GET, HEAD'); throw new BridgeError('method', '搜题请使用 POST。', 405); }
-      if (!authorized(req, config.token)) throw new BridgeError('bridge_auth', '本机接口 token 不匹配，请使用新导出的 OCS 配置。', 401);
+      let device=null;
+      if (!authorized(req, config.token)) {device=database.identify(String(req.headers.authorization||'').replace(/^Bearer /,'')); if(!device) throw new BridgeError('bridge_auth', '接口 token 不匹配，请使用新导出的 OCS 配置。', 401);}
       const input = await body(req, config.server.maxBodyBytes);
       if (url.pathname !== '/api/answer') {
         if (!input || typeof input !== 'object' || Array.isArray(input)) throw new BridgeError('invalid_question', '请求体必须是 JSON 对象。', 400);
         input.mode = url.pathname.endsWith('/lite') ? 'lite' : 'full';
       }
-      await execute(input, req, res, requestId, started);
-    } catch (error) { json(res, error.status || 500, { code: 0, success: false, request_id: requestId, error: { code: error.code || 'internal_error', message: redact(error.message || '接口内部错误。') } }); }
+      await execute(input, req, res, requestId, started,device);
+    } catch (error) { json(res, error.status || (error.code?.startsWith('SQLITE')?400:500), { code: 0, success: false, request_id: requestId, error: { code: error.code || 'internal_error', message: error.code?.startsWith('SQLITE')?'数据库写入失败，题目可能重复或字段无效。':redact(error.message || '接口内部错误。') } }); }
   });
   server.requestTimeout = 15000; server.headersTimeout = 10000; server.keepAliveTimeout = 5000;
-  return { server, get solver() { return solver; }, health };
+  server.once('close',()=>database.close());
+  return { server, get solver() { return solver; }, health, database };
 }
 
 export function startServer(config, options = {}) {

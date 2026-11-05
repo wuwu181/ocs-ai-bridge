@@ -24,8 +24,12 @@
     "maxTextChars": 100000
   },
   "routing": {
-    "text": ["deepseek"],
-    "vision": ["deepseek"],
+    "text": [
+      "deepseek"
+    ],
+    "vision": [
+      "deepseek"
+    ],
     "multiple": [],
     "subjective": []
   },
@@ -41,8 +45,16 @@
       "tokenParameter": "max_tokens",
       "temperature": 0.2,
       "jsonMode": true,
-      "extraBody": { "thinking": { "type": "disabled" } },
-      "liteBody": { "thinking": { "type": "disabled" } }
+      "extraBody": {
+        "thinking": {
+          "type": "disabled"
+        }
+      },
+      "liteBody": {
+        "thinking": {
+          "type": "disabled"
+        }
+      }
     },
     "openai": {
       "enabled": false,
@@ -79,5 +91,14 @@
       "extraHeaders": {},
       "extraBody": {}
     }
+  },
+  "bank": {
+    "enabled": true,
+    "autoSave": true,
+    "reviewedOnly": false
+  },
+  "network": {
+    "publicBase": "",
+    "trustedProxies": []
   }
 }

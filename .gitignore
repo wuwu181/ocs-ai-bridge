@@ -14,8 +14,12 @@ release/
 node_modules/
 .tmp-*
 *.tmp
+*.tmp-*
 *.zip
 .DS_Store
 Thumbs.db
 .vscode/
 .idea/
+data/
+*.sqlite*
+*.db

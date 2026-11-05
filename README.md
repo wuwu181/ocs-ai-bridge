@@ -1,12 +1,24 @@
-# OCS AI Bridge 2.0 · 多模型可视化控制台
+# OCS AI Bridge 3.0 · 多模型可视化控制台
 
 在浏览器里管理模型和 Key、选择答题策略、测试文字或图片题，并导出 OCS 配置。支持 OpenAI Chat Completions 与 Anthropic Claude Messages 两种上游协议；同一服务商可以配置多个模型，不同服务商也可以组合使用。
 
 **第一次使用：**阅读 [快速上手](docs/QUICKSTART.md)，按“下载 → 启动 → 填接口 → 试答 → 导入 OCS”完成配置。遇到问题查看 [故障排查](docs/TROUBLESHOOTING.md)。密钥保存与提交规则见 [密钥与隐私](SECURITY.md)。
 
+## V3 新功能
+
+- 修复判断题 A/B 格式问题：按明确的“正确/错误”原始选项转换，无法映射时仅修正一次，不猜对应关系。
+- **自建题库**：SQLite 持久化，默认先查题，AI 成功后自动入库；支持中文搜索、题型筛选、图文编辑、停用和人工核对。
+- **本地模型**：Ollama / LM Studio 预设，可连接本机或局域网中的兼容模型服务。
+- **设备共享**：局域网监听、自有公网根地址、独立设备令牌、配置导出、IP规则、每天次数/Token/费用及并发限额。
+- **费用统计**：持久化设备与IP用量，按北京时间日期汇总，按DeepSeek官方人民币价格和高峰窗口估价，可编辑假期与模型价格。
+
+配置步骤和计费边界见 [V3 完整指南](docs/V3.md)。公网可达性仍需要自己的域名/服务器/路由器配置；程序提供连接与导出，不会自动部署公网服务。
+
+![V3 自建题库示意，使用模拟数据](docs/images/question-bank-v3.png)
+
 ## 下载和安装
 
-需要 [Node.js 22 或更新版本](https://nodejs.org/)，Windows 使用安装程序安装完成后重新打开终端。项目使用 Node.js 内置模块，**不需要 npm install**。
+需要 [Node.js 22.13 或更新版本](https://nodejs.org/)，Windows 使用安装程序安装完成后重新打开终端。项目使用 Node.js 内置模块，**不需要 npm install**。
 
 - 网页下载：仓库页面点击 **Code → Download ZIP**，完整解压后再运行 `start.cmd`。私有仓库需要先登录有访问权限的 GitHub 账号。
 - Git 下载：
@@ -25,7 +37,7 @@ macOS / Linux 在解压或克隆的目录运行 `node launcher.mjs --no-browser`
 
 ## 三步开始
 
-1. 解压整个目录，双击 **start.cmd**。需要 Node.js 22 或更新版本，无需 `npm install`。首次启动自动创建配置并打开控制台。
+1. 解压整个目录，双击 **start.cmd**。需要 Node.js 22.13 或更新版本，无需 `npm install`。首次启动自动创建配置并打开控制台。
 2. 打开“**接口与模型**”，编辑 DeepSeek 预设，或新增其他接口。填写完整接口地址、模型 ID、API Key，点击“应用到工作区”，再点顶部“**保存配置**”。
 3. 在“**连接 OCS**”选择模式，复制或下载题库配置，导入 OCS“通用 → 全局设置 → 题库配置”。通常只导入选中的一份，避免重复调用。
 
@@ -187,11 +199,11 @@ README.md / VALIDATION.md     使用说明与验证记录
 
 ## 直接导入模板仍可用
 
-不运行本机接口时，`configs/deepseek-direct.json`、`openai-direct.json`、`anthropic-direct.json` 可直接导入 OCS，替换占位 Key 和准确模型 ID 即可。`deepseek-lite-direct.json` 为独立省 Token 版。接口版的可视化配置、用量统计和路由不会作用于这些直连配置。
+不运行本机接口时，`configs/deepseek-direct.json`、`openai-direct.json`、`anthropic-direct.json` 可直接导入 OCS，替换占位 Key 和准确模型 ID 即可。`deepseek-lite-direct.json` 为独立省 Token 版。接口版的可视化配置、题库、设备限额、用量统计和路由不会作用于这些直连配置。`ollama-direct.json` 为本机模型直连模板。
 
 ## 验证与已知范围
 
-运行 `node --test` 一次集中验证协议、模式、图片、管理 API 和 OCS 导出。新版已在独立 Edge 无头浏览器里验证模型保存、模型查询、文字 / 图片试答、缓存、配置下载及手机布局，详情见 `VALIDATION.md`。
+运行 `npm test` 一次集中验证协议、模式、图片、管理 API 和 OCS 导出。新版已在独立 Edge 无头浏览器里验证模型保存、模型查询、文字 / 图片试答、缓存、配置下载及手机布局，详情见 `VALIDATION.md`。
 
 升级开发阶段使用假 Key 和模拟上游，未修改你现有的 Key，也未调用真实付费模型。实际识图准确率、模型权限和特殊网页控件回填仍需在你的课程环境确认。匹配 / 排序等复杂题可以生成文本解答，自动点击取决于 OCS 本身；音频、视频和 PDF 文件没有接入本版。
 

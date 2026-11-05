@@ -1,8 +1,12 @@
+import { installFeatures } from './features.js';
 const $ = id => document.getElementById(id);
-const names = { overview: '运行概览', models: '接口与模型', routing: '答题策略', test: '在线试答', connect: '连接 OCS', guide: '使用指南' };
+let features=null;
+const names = { overview: '运行概览', models: '接口与模型', routing: '答题策略', test: '在线试答', connect: '连接 OCS', guide: '使用指南',bank:'自建题库',devices:'设备与限额',network:'网络与共享',billing:'费用与统计' };
 const modeNames = { auto: '自动', lite: '省 Token', full: '完整多模态' };
 const routes = { text: ['文字题', '基础文字题的默认接口。'], vision: ['图片题', '仅选择实际支持视觉输入的模型。'], multiple: ['文字多选题', '留空时使用文字题路由。'], subjective: ['文字主观题', '留空时使用文字题路由。'] };
 const presets = {
+  ollama:{name:'Ollama 本地模型',protocol:'openai',endpoint:'http://127.0.0.1:11434/v1/chat/completions',model:'',vision:false,authStyle:'none',maxTokens:4096,tokenParameter:'max_tokens'},
+  lmstudio:{name:'LM Studio 本地模型',protocol:'openai',endpoint:'http://127.0.0.1:1234/v1/chat/completions',model:'',vision:false,authStyle:'none',maxTokens:4096,tokenParameter:'max_tokens'},
   deepseek: { name: 'DeepSeek Flash', protocol: 'openai', endpoint: 'https://api.deepseek.com/chat/completions', model: 'deepseek-flash', vision: true, tokenParameter: 'max_tokens', maxTokens: 4096, temperature: 0.2, jsonMode: true, extraBody: { thinking: { type: 'disabled' } }, liteBody: { thinking: { type: 'disabled' } }, apiKeyEnv: 'DEEPSEEK_API_KEY', authStyle: 'bearer' },
   openai: { name: 'OpenAI', protocol: 'openai', endpoint: 'https://api.openai.com/v1/chat/completions', model: '', vision: true, tokenParameter: 'max_completion_tokens', maxTokens: 4096, apiKeyEnv: 'OPENAI_API_KEY', authStyle: 'bearer' },
   claude: { name: 'Claude', protocol: 'anthropic', endpoint: 'https://api.anthropic.com/v1/messages', model: '', vision: true, maxTokens: 4096, anthropicVersion: '2026-10-21', apiKeyEnv: 'ANTHROPIC_API_KEY', authStyle: 'x-api-key' },
@@ -50,6 +54,7 @@ function view(name) {
   $('breadcrumb').textContent = names[name];
   if (name === 'overview') refresh();
   if (name === 'connect') $('export-base').value ||= location.origin;
+  features?.show(name).catch(e=>toast(e.message));
 }
 async function connect() {
   const result = await api('/admin/config');
@@ -98,6 +103,7 @@ function renderSettings() {
   $('setting-max').value = config.answering.maxTokens;
   $('setting-attempts').value = config.answering.liteAttempts;
   $('setting-port').value = config.server.port;
+  features?.load();
 }
 for (const [id, parent, field, numeric] of [
   ['setting-mode', 'answering', 'mode', false], ['setting-concurrent', 'server', 'maxConcurrent', true],
@@ -229,7 +235,7 @@ async function refresh() {
     $('workspace-queue').textContent = `${data.active} / ${data.queued}`;
     $('workspace-latency').textContent = prettyTime(data.stats.average_ms);
     const rows = data.history.map(row => node('tr', {}, [
-      node('td', {}, [node('div', { class: 'time', text: new Date(row.at).toLocaleTimeString('zh-CN', { hour12: false }) }), node('div', { class: 'question-summary', text: row.question, title: row.question })]),
+      node('td', {}, [node('div', { class: 'time', text: new Date(row.at).toLocaleTimeString('zh-CN', { hour12: false,timeZone:'Asia/Shanghai' }) }), node('div', { class: 'question-summary', text: row.question, title: row.question })]),
       node('td', { text: row.profile ? displayName(row.profile) : '—' }), node('td', {}, [badge(modeNames[row.mode] || row.mode || '自动')]),
       node('td', {}, [badge(row.cached ? '缓存' : row.success ? '成功' : row.error_code || '失败', row.success ? 'good' : 'bad')]),
       node('td', { text: prettyTime(row.elapsed_ms) }), node('td', { text: row.usage?.reported ? (row.usage.total_tokens || 0).toLocaleString() : '未上报' })
@@ -261,7 +267,7 @@ $('test-form').addEventListener('submit', async event => {
   $('result-status').textContent = '正在试答'; $('test-result').textContent = '正在等待模型返回…'; $('test-meta').replaceChildren();
   try {
     const value = await api('/admin/test', { method: 'POST', signal: controller.signal, body: JSON.stringify({ title: $('test-title').value, type: $('test-type').value, options: $('test-options').value,
-      mode: $('test-mode').value, profile: $('test-profile').value, images: images.map(item => item.url) }) });
+      mode: $('test-mode').value, profile: $('test-profile').value, use_database:$('test-database').checked, images: images.map(item => item.url) }) });
     $('test-json').textContent = JSON.stringify(value, null, 2);
     $('result-status').textContent = value.code === 1 ? '已完成' : '请求失败';
     $('test-result').textContent = value.code === 1 ? value.display_answer : value.error?.message || '没有返回答案';
@@ -272,7 +278,7 @@ $('test-form').addEventListener('submit', async event => {
 });
 $('cancel-test').addEventListener('click', () => controller?.abort());
 async function exported() {
-  const params = new URLSearchParams({ mode: state.exportMode, base: $('export-base').value || location.origin, profile: $('export-profile').value });
+  const params = new URLSearchParams({ mode: state.exportMode, base: $('export-base').value || location.origin, profile: $('export-profile').value,device:$('export-device').value });
   return api('/admin/ocs-config?' + params);
 }
 $('preview-config').addEventListener('click', async () => { try { $('config-preview').textContent = JSON.stringify(await exported(), null, 2); $('config-preview').classList.remove('hidden'); } catch (error) { toast(error.message); } });
@@ -292,6 +298,8 @@ document.querySelectorAll('[data-export-mode]').forEach(button => button.addEven
   document.querySelectorAll('[data-export-mode]').forEach(item => item.classList.toggle('selected', item === button));
   $('config-preview').classList.add('hidden');
 }));
+features=installFeatures({ $,node,api,state:()=>state,dirty,toast,view });
+$('model-preset').append(node('option',{value:'ollama',text:'Ollama 本地模型'}),node('option',{value:'lmstudio',text:'LM Studio 本地模型'}));
 document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => view(button.dataset.view)));
 document.querySelectorAll('[data-goto]').forEach(button => button.addEventListener('click', () => view(button.dataset.goto)));
 $('add-model').addEventListener('click', () => openModel());
