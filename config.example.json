@@ -1,0 +1,83 @@
+{
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8765,
+    "tokenEnv": "OCS_BRIDGE_TOKEN",
+    "totalTimeoutMs": 50000,
+    "attemptTimeoutMs": 24000,
+    "maxConcurrent": 2,
+    "maxQueue": 8,
+    "maxBodyBytes": 33554432,
+    "cacheEntries": 100,
+    "cacheTtlMs": 900000
+  },
+  "answering": {
+    "mode": "auto",
+    "objectiveTokens": 32,
+    "maxTokens": 512,
+    "liteAttempts": 1
+  },
+  "limits": {
+    "maxImages": 20,
+    "maxImageBytes": 5242880,
+    "maxTotalImageBytes": 20971520,
+    "maxTextChars": 100000
+  },
+  "routing": {
+    "text": ["deepseek"],
+    "vision": ["deepseek"],
+    "multiple": [],
+    "subjective": []
+  },
+  "profiles": {
+    "deepseek": {
+      "enabled": true,
+      "protocol": "openai",
+      "endpoint": "https://api.deepseek.com/chat/completions",
+      "apiKeyEnv": "DEEPSEEK_API_KEY",
+      "model": "deepseek-flash",
+      "vision": true,
+      "maxTokens": 4096,
+      "tokenParameter": "max_tokens",
+      "temperature": 0.2,
+      "jsonMode": true,
+      "extraBody": { "thinking": { "type": "disabled" } },
+      "liteBody": { "thinking": { "type": "disabled" } }
+    },
+    "openai": {
+      "enabled": false,
+      "protocol": "openai",
+      "endpoint": "https://api.openai.com/v1/chat/completions",
+      "apiKeyEnv": "OPENAI_API_KEY",
+      "model": "YOUR_OPENAI_VISION_MODEL",
+      "vision": true,
+      "maxTokens": 4096,
+      "tokenParameter": "max_completion_tokens",
+      "jsonMode": false
+    },
+    "claude": {
+      "enabled": false,
+      "protocol": "anthropic",
+      "endpoint": "https://api.anthropic.com/v1/messages",
+      "apiKeyEnv": "ANTHROPIC_API_KEY",
+      "model": "YOUR_CLAUDE_MODEL",
+      "vision": true,
+      "maxTokens": 4096,
+      "anthropicVersion": "2026-10-21",
+      "authStyle": "x-api-key"
+    },
+    "compatible": {
+      "enabled": false,
+      "protocol": "openai",
+      "endpoint": "https://YOUR_PROVIDER/v1/chat/completions",
+      "apiKeyEnv": "COMPATIBLE_API_KEY",
+      "model": "YOUR_MODEL",
+      "vision": false,
+      "maxTokens": 4096,
+      "tokenParameter": "max_tokens",
+      "jsonMode": false,
+      "extraHeaders": {},
+      "extraBody": {}
+    }
+  }
+}

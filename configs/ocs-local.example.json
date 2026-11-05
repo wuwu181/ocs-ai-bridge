@@ -1,0 +1,35 @@
+[
+  {
+    "name": "统一AI题库-自动",
+    "homepage": "http://127.0.0.1:8765/health",
+    "url": "http://127.0.0.1:8765/api/answer",
+    "method": "post",
+    "type": "GM_xmlhttpRequest",
+    "contentType": "json",
+    "headers": {
+      "Content-Type": "application/json",
+      "Authorization": "Bearer REPLACE_WITH_BRIDGE_TOKEN_GENERATED_BY_SETUP"
+    },
+    "data": {
+      "title": {
+        "handler": "return (env)=>String(env.title||'');"
+      },
+      "type": {
+        "handler": "return (env)=>String(env.type||'unknown');"
+      },
+      "options": {
+        "handler": "return (env)=>env.options||'';"
+      },
+      "images": {
+        "handler": "return (env)=>Array.isArray(env.images)?env.images:[];"
+      },
+      "suggestion_title": {
+        "handler": "return (env)=>String(env.suggestion_title||'');"
+      },
+      "suggestion_options": {
+        "handler": "return (env)=>env.suggestion_options||'';"
+      }
+    },
+    "handler": "return (res)=>{if(!res||res.code!==1){var e=res&&res.error;throw new Error(e&&e.message||res&&res.message||'统一接口没有返回答案');}if(typeof res.answer!=='string'||!res.answer.trim())return undefined;return [undefined,res.answer,{ai:true,cache:res.cached===true,model:res.model,provider:res.profile}];}"
+  }
+]

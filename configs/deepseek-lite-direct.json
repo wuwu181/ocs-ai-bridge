@@ -1,0 +1,29 @@
+[
+  {
+    "name": "DeepSeek基础答题-省Token版",
+    "homepage": "https://platform.deepseek.com",
+    "url": "https://api.deepseek.com/chat/completions",
+    "method": "post",
+    "type": "GM_xmlhttpRequest",
+    "contentType": "json",
+    "headers": {
+      "Authorization": "Bearer REPLACE_WITH_DEEPSEEK_API_KEY",
+      "Content-Type": "application/json"
+    },
+    "data": {
+      "model": "deepseek-flash",
+      "stream": false,
+      "temperature": 0.2,
+      "thinking": {
+        "type": "disabled"
+      },
+      "max_tokens": {
+        "handler": "return function (env) {\n  return /^(single|multiple|judgement)$/.test(String(env.type || '').toLowerCase()) ? 32 : 512;\n};"
+      },
+      "messages": {
+        "handler": "return function (env) {\n  var t = String(env.type || '').toLowerCase();\n  var q = String(env.title || '').trim();\n  var o = String(env.options || '').trim();\n  if (!q) throw new Error('题目不能为空');\n  var rule = t === 'single' ? '单选仅答一个大写字母。' :\n    t === 'multiple' ? '多选仅答全部正确字母，升序连写，如ACD。' :\n    t === 'judgement' ? '判断仅答对或错。' :\n    '填空答JSON数组，每空一项；解答题仅用一项简明作答，计算保留必要公式和结果。';\n  if (t === 'single' || t === 'multiple') {\n    o = o.split(/\\r?\\n/).map(function (s) { return s.trim(); }).filter(Boolean).map(function (s, i) {\n      return /^[A-Z][.．、:：)）\\s]/i.test(s) ? s : String.fromCharCode(65 + i) + '. ' + s;\n    }).join('\\n');\n  }\n  return [\n    { role: 'system', content: '准确答题。' + rule + '不确定仅答未知。' },\n    { role: 'user', content: q + (o ? '\\n' + o : '') }\n  ];\n};"
+      }
+    },
+    "handler": "return function (res) {\n  if (res && res.error) throw new Error(res.error.message || '接口返回错误');\n  var x = res && res.choices && res.choices[0];\n  if (!x) return undefined;\n  if (x.finish_reason === 'length') throw new Error('答案被截断，可将max_tokens处理器中的512调高');\n  if (x.finish_reason && x.finish_reason !== 'stop') throw new Error('模型未正常完成答案：' + x.finish_reason);\n  if (x.message && x.message.refusal) throw new Error('模型未返回答案');\n  var c = x.message && x.message.content;\n  if (typeof c !== 'string') return undefined;\n  c = c.trim().replace(/^```(?:json)?\\s*\\n?([\\s\\S]*?)\\n?```$/i, '$1').trim();\n  if (!c || /^(未知|无法确定|不确定)[。.!！]?$/.test(c)) return undefined;\n  if (c[0] === '[') {\n    var a;\n    try { a = JSON.parse(c); } catch (_) { throw new Error('填空或解答格式错误，请重试'); }\n    if (!Array.isArray(a) || !a.length || a.some(function (v) { return typeof v !== 'string' && typeof v !== 'number'; })) throw new Error('答案数组无效');\n    a = a.map(String);\n    if (a.some(function (v) { return !v.trim(); })) return undefined;\n    c = JSON.stringify(a);\n  }\n  return [undefined, c, { ai: true }];\n};"
+  }
+]
