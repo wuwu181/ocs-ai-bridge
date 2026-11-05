@@ -11,7 +11,7 @@ import { BridgeError, redact, listModels } from './lib/providers.mjs';
 import { initializeFiles } from './lib/store.mjs';
 import { bridgeConfig } from './lib/ocs.mjs';
 
-export const VERSION = '3.0.0';
+export const VERSION = '3.0.1';
 const assets = new Map([
   ['/', ['index.html', 'text/html; charset=utf-8']],
   ['/app.js', ['app.js', 'text/javascript; charset=utf-8']],

@@ -1,6 +1,17 @@
-import { installFeatures } from './features.js';
 const $ = id => document.getElementById(id);
 let features=null;
+let featureStartup=null;
+async function prepareFeatures(config) {
+  if(features) return;
+  if(!config.bank || !config.network || !config.billing) {
+    notice('当前仍运行旧版服务。基础控制台可用；请关闭旧服务窗口后重新运行新版 start.cmd，启用 V3 功能。');
+    return;
+  }
+  featureStartup ||= import('./features.js').then(({installFeatures})=>{
+    features=installFeatures({ $,node,api,state:()=>state,dirty,toast,view });
+  }).catch(()=>{notice('扩展页面加载失败，基础控制台仍可使用。请确认完整解压新版文件，重启 start.cmd 后刷新页面。');});
+  await featureStartup;
+}
 const names = { overview: '运行概览', models: '接口与模型', routing: '答题策略', test: '在线试答', connect: '连接 OCS', guide: '使用指南',bank:'自建题库',devices:'设备与限额',network:'网络与共享',billing:'费用与统计' };
 const modeNames = { auto: '自动', lite: '省 Token', full: '完整多模态' };
 const routes = { text: ['文字题', '基础文字题的默认接口。'], vision: ['图片题', '仅选择实际支持视觉输入的模型。'], multiple: ['文字多选题', '留空时使用文字题路由。'], subjective: ['文字主观题', '留空时使用文字题路由。'] };
@@ -39,7 +50,7 @@ function dirty() { state.dirty = true; $('dirty').classList.remove('hidden'); }
 function notice(message) { $('notice').textContent = message; $('notice').classList.toggle('hidden', !message); }
 function lock() { token = ''; sessionStorage.removeItem('ocs-admin-token'); $('auth-overlay').classList.remove('hidden'); $('connection-text').textContent = '控制台已锁定'; }
 async function api(path, options = {}) {
-  const response = await fetch(path, { ...options, headers: { Authorization: `Bearer ${token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } });
+  const response = await fetch(path, { ...options, signal:options.signal||AbortSignal.timeout(path==='/admin/test'?55000:15000), headers: { Authorization: `Bearer ${token}`, ...(options.body ? { 'Content-Type': 'application/json' } : {}), ...options.headers } });
   const result = await response.json();
   if (!response.ok) {
     if (response.status === 401) lock();
@@ -59,6 +70,7 @@ function view(name) {
 async function connect() {
   const result = await api('/admin/config');
   state.config = result.config; state.revision = result.revision; state.secrets = {}; state.dirty = false;
+  await prepareFeatures(state.config);
   sessionStorage.setItem('ocs-admin-token', token);
   $('auth-overlay').classList.add('hidden'); $('dirty').classList.add('hidden');
   renderModels(); renderSettings(); renderRoutes(); renderProfileOptions();
@@ -267,7 +279,7 @@ $('test-form').addEventListener('submit', async event => {
   $('result-status').textContent = '正在试答'; $('test-result').textContent = '正在等待模型返回…'; $('test-meta').replaceChildren();
   try {
     const value = await api('/admin/test', { method: 'POST', signal: controller.signal, body: JSON.stringify({ title: $('test-title').value, type: $('test-type').value, options: $('test-options').value,
-      mode: $('test-mode').value, profile: $('test-profile').value, use_database:$('test-database').checked, images: images.map(item => item.url) }) });
+      mode: $('test-mode').value, profile: $('test-profile').value, use_database:$('test-database')?.checked===true, images: images.map(item => item.url) }) });
     $('test-json').textContent = JSON.stringify(value, null, 2);
     $('result-status').textContent = value.code === 1 ? '已完成' : '请求失败';
     $('test-result').textContent = value.code === 1 ? value.display_answer : value.error?.message || '没有返回答案';
@@ -278,7 +290,7 @@ $('test-form').addEventListener('submit', async event => {
 });
 $('cancel-test').addEventListener('click', () => controller?.abort());
 async function exported() {
-  const params = new URLSearchParams({ mode: state.exportMode, base: $('export-base').value || location.origin, profile: $('export-profile').value,device:$('export-device').value });
+  const params = new URLSearchParams({ mode: state.exportMode, base: $('export-base').value || location.origin, profile: $('export-profile').value,device:$('export-device')?.value||'' });
   return api('/admin/ocs-config?' + params);
 }
 $('preview-config').addEventListener('click', async () => { try { $('config-preview').textContent = JSON.stringify(await exported(), null, 2); $('config-preview').classList.remove('hidden'); } catch (error) { toast(error.message); } });
@@ -298,7 +310,6 @@ document.querySelectorAll('[data-export-mode]').forEach(button => button.addEven
   document.querySelectorAll('[data-export-mode]').forEach(item => item.classList.toggle('selected', item === button));
   $('config-preview').classList.add('hidden');
 }));
-features=installFeatures({ $,node,api,state:()=>state,dirty,toast,view });
 $('model-preset').append(node('option',{value:'ollama',text:'Ollama 本地模型'}),node('option',{value:'lmstudio',text:'LM Studio 本地模型'}));
 document.querySelectorAll('[data-view]').forEach(button => button.addEventListener('click', () => view(button.dataset.view)));
 document.querySelectorAll('[data-goto]').forEach(button => button.addEventListener('click', () => view(button.dataset.goto)));
@@ -306,9 +317,13 @@ $('add-model').addEventListener('click', () => openModel());
 $('close-dialog').addEventListener('click', () => $('model-dialog').close());
 $('logout').addEventListener('click', lock);
 $('auth-form').addEventListener('submit', async event => {
-  event.preventDefault(); token = $('auth-token').value.trim();
-  try { await connect(); $('auth-token').value = ''; $('auth-error').textContent = ''; } catch (error) { $('auth-error').textContent = error.message; }
+  event.preventDefault();
+  const button=$('auth-submit');button.disabled=true;button.textContent='正在连接…';$('auth-error').textContent='';
+  token = $('auth-token').value.trim().replace(/^OCS_BRIDGE_TOKEN\s*=\s*/, '').replace(/^Bearer\s+/i,'').replace(/^(["'])(.*)\1$/,'$2');
+  try { await connect(); $('auth-token').value = ''; } catch (error) { $('auth-error').textContent = error.message; }
+  finally {button.disabled=false;button.textContent='连接控制台';}
 });
+$('auth-submit').disabled=false;$('auth-submit').textContent='连接控制台';$('auth-error').textContent='';
 window.addEventListener('resize', () => { if (state.view === 'overview') drawChart(state.history); });
 setInterval(() => { if (!document.hidden && token) refresh(); }, 7000);
 if (token) connect().catch(error => { $('auth-error').textContent = error.message; });

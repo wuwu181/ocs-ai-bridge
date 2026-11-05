@@ -2,7 +2,7 @@ export function installFeatures({ $, node, api, state, dirty, toast, view }) {
   const main=document.querySelector('main'), nav=document.querySelector('nav');
   const pages={ bank:'自建题库', devices:'设备与限额', network:'网络与共享', billing:'费用与统计' };
   function page(id,title,html) {
-    nav.append(node('button',{class:'nav','data-view':id,text:title}));
+    nav.append(node('button',{class:'nav','data-view':id,text:title,onclick:()=>view(id)}));
     const section=node('section',{id:`view-${id}`,class:'view hidden'});
     section.innerHTML=`<div class="page-heading"><div><p class="eyebrow">WORKSPACE</p><h1>${title}</h1></div></div>`+html;
     main.insertBefore(section,main.querySelector('footer'));
